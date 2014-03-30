@@ -1,0 +1,6 @@
+name = Commerce Discount Product Category
+description = Provides condition to allow Commerce Discount to apply based on a product display's attached terms.
+core = 7.x
+
+dependencies[] = taxonomy
+dependencies[] = commerce_discount
