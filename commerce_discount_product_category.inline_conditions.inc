@@ -10,16 +10,34 @@
 function commerce_discount_product_category_inline_conditions_info() {
   $conditions = array();
 
-  $conditions['commerce_product_display_has_specified_terms'] = array(
+  $conditions['commerce_discount_product_category_has_specified_terms'] = array(
     'label' => t('Product category'),
     'entity type' => 'commerce_line_item',
     'callbacks' => array(
-      'configure' => 'commerce_product_display_has_specified_terms_configure',
-      'build' => 'commerce_product_display_has_specified_terms_build',
+      'configure' => 'commerce_discount_product_category_has_specified_terms_configure',
+      'build' => 'commerce_discount_product_category_has_specified_terms_build',
     ),
   );
 
   return $conditions;
+}
+
+/**
+ * Implements hook_inline_conditions_build_alter().
+ */
+function commerce_discount_product_category_inline_conditions_build_alter(&$value) {
+  switch ($value['condition_name']) {
+    case 'commerce_discount_product_category_has_specified_terms':
+      $terms = $value['condition_settings']['terms'];
+      $value['condition_settings']['terms'] = '';
+      foreach ($terms as $term) {
+        $value['condition_settings']['terms'] .= reset($term);
+        if ($term !== end($terms)) {
+          $value['condition_settings']['terms'] .= ', ';
+        }
+      }
+      break;
+  }
 }
 
 /**
@@ -31,7 +49,7 @@ function commerce_discount_product_category_inline_conditions_info() {
  * @return array
  *   Return a form element.
  */
-function commerce_product_display_has_specified_terms_configure($settings) {
+function commerce_discount_product_category_has_specified_terms_configure($settings) {
   $form = array();
 
   $default_value = '';
