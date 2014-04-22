@@ -47,34 +47,63 @@ function commerce_discount_product_category_has_specified_terms_build(EntityDrup
 
   // If commerce_product is attached.
   if (in_array('commerce_product', array_keys($wrapper->getPropertyInfo()))) {
-    // Make sure we have a bridge to a display node.
-    foreach ($wrapper->commerce_product->getPropertyInfo() as $field_name => $property) {
 
-      if (isset($property['field']) && $property['field']['type'] == 'commerce_product_reference') {
-        if ($wrapper->commerce_product->$field_name instanceof EntityListWrapper) {
+    // Collect product reference fields from the display nodes, to query them.
+    $product_reference_fields = array();
+    foreach (field_info_field_map() as $field_name => $field_stub) {
+      if ($field_stub['type'] == 'commerce_product_reference' && !empty($field_stub['bundles']['node'])) {
 
-          // Cycle through the product display reference to find term fields.
-          foreach ($wrapper->commerce_product->$field_name as $node_display_wrapper) {
-            foreach ($node_display_wrapper->getPropertyInfo() as $node_field_name => $node_property) {
+        // Not every product reference field signifies that this node is
+        // 'a display node for this particular product'. We assume it is, if the
+        // "Render fields from the referenced products when viewing this entity"
+        // per-instance setting is true.
+        $bundles = array();
+        foreach ($field_stub['bundles']['node'] as $bundle) {
+          $instance_info = field_info_instance('node', $field_name, $bundle);
+          if (!empty($instance_info['settings']['field_injection'])) {
+            $bundles[] = $bundle;
+          }
+        }
+        if ($bundles) {
+          // We should check a relationship through this field, only for
+          // nodes of the collected bundles.
+          $product_reference_fields[$field_name] = $bundles;
+        }
+      }
+    }
 
-              // Check if the property is of a taxonomy term type.
-              if (isset($node_property['type']) && $node_property['type'] == 'taxonomy_term') {
+    foreach ($product_reference_fields as $field_name => $bundles) {
+      $query = new EntityFieldQuery();
+      $result = $query->entityCondition('entity_type', 'node')
+        ->entityCondition('bundle', $bundles, 'IN')
+        ->fieldCondition($field_name, 'product_id', $wrapper->commerce_product->getIdentifier())
+        ->execute();
 
-                // If the wrapped field is an instance of EntityListWrapper class, that
-                // means that field contains multiple values.
-                if ($node_display_wrapper->$node_field_name instanceof EntityListWrapper) {
-                  foreach ($node_display_wrapper->$node_field_name as $wrapper_term) {
-                    // We have a match, apply discount
-                    if (($key = array_search($wrapper_term->getIdentifier(), $terms_to_check)) !== FALSE) {
-                      return TRUE;
-                    }
-                  }
-                }
-                elseif ($term =$node_display_wrapper->$node_field_name->value()) {
-                  // The single value matches, return true.
-                  if (($key = array_search($term->tid, $terms_to_check)) !== FALSE) {
+      if (isset($result['node'])) {
+        foreach (array_keys($result['node']) as $nid) {
+          $node = node_load($nid);
+          $node_display_wrapper = entity_metadata_wrapper('node', $node);
+
+          foreach ($node_display_wrapper->getPropertyInfo() as $node_field_name => $node_property) {
+
+            // Check if the property is of a taxonomy term type.
+            if (isset($node_property['type']) &&
+                ($node_property['type'] == 'taxonomy_term' || $node_property['type'] == 'list<taxonomy_term>')) {
+
+              // If the wrapped field is an instance of EntityListWrapper class, that
+              // means that field contains multiple values.
+              if ($node_display_wrapper->$node_field_name instanceof EntityListWrapper) {
+                foreach ($node_display_wrapper->$node_field_name as $wrapper_term) {
+                  // We have a match, apply discount
+                  if (($key = array_search($wrapper_term->getIdentifier(), $terms_to_check)) !== FALSE) {
                     return TRUE;
                   }
+                }
+              }
+              elseif ($term = $node_display_wrapper->$node_field_name->value()) {
+                // The single value matches, return true.
+                if (($key = array_search($term->tid, $terms_to_check)) !== FALSE) {
+                  return TRUE;
                 }
               }
             }
