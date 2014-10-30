@@ -76,6 +76,7 @@ function commerce_discount_product_category_has_specified_terms_build(EntityDrup
       $query = new EntityFieldQuery();
       $result = $query->entityCondition('entity_type', 'node')
         ->entityCondition('bundle', $bundles, 'IN')
+        ->propertyCondition('status', 1)
         ->fieldCondition($field_name, 'product_id', $wrapper->commerce_product->getIdentifier())
         ->execute();
 
