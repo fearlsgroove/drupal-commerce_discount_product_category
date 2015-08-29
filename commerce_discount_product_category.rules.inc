@@ -43,31 +43,39 @@ function commerce_discount_product_category_rules_condition_info() {
  *   True is condition is valid. false otherwise.
  */
 function commerce_discount_product_category_has_specified_terms_build(EntityDrupalWrapper $wrapper, $terms) {
+  if (!in_array('commerce_product', array_keys($wrapper->getPropertyInfo()))) {
+    return FALSE;
+  }
+
+  static $cached_items = array();
+  $type = $wrapper->type();
+  $product_id = $wrapper->commerce_product->getIdentifier();
+  $cache_key = "$type:$product_id";
   $terms_to_check = explode(', ', $terms);
 
-  // If commerce_product is attached.
-  if (in_array('commerce_product', array_keys($wrapper->getPropertyInfo()))) {
-
+  if (!isset($cached_items[$cache_key])) {
     // Collect product reference fields from the display nodes, to query them.
-    $product_reference_fields = array();
-    foreach (field_info_field_map() as $field_name => $field_stub) {
-      if ($field_stub['type'] == 'commerce_product_reference' && !empty($field_stub['bundles']['node'])) {
+    static $product_reference_fields = FALSE;
+    if ($product_reference_fields === FALSE) {
+      foreach (field_info_field_map() as $field_name => $field_stub) {
+        if ($field_stub['type'] == 'commerce_product_reference' && !empty($field_stub['bundles']['node'])) {
 
-        // Not every product reference field signifies that this node is
-        // 'a display node for this particular product'. We assume it is, if the
-        // "Render fields from the referenced products when viewing this entity"
-        // per-instance setting is true.
-        $bundles = array();
-        foreach ($field_stub['bundles']['node'] as $bundle) {
-          $instance_info = field_info_instance('node', $field_name, $bundle);
-          if (!empty($instance_info['settings']['field_injection'])) {
-            $bundles[] = $bundle;
+          // Not every product reference field signifies that this node is
+          // 'a display node for this particular product'. We assume it is, if the
+          // "Render fields from the referenced products when viewing this entity"
+          // per-instance setting is true.
+          $bundles = array();
+          foreach ($field_stub['bundles']['node'] as $bundle) {
+            $instance_info = field_info_instance('node', $field_name, $bundle);
+            if (!empty($instance_info['settings']['field_injection'])) {
+              $bundles[] = $bundle;
+            }
           }
-        }
-        if ($bundles) {
-          // We should check a relationship through this field, only for
-          // nodes of the collected bundles.
-          $product_reference_fields[$field_name] = $bundles;
+          if ($bundles) {
+            // We should check a relationship through this field, only for
+            // nodes of the collected bundles.
+            $product_reference_fields[$field_name] = $bundles;
+          }
         }
       }
     }
@@ -77,7 +85,7 @@ function commerce_discount_product_category_has_specified_terms_build(EntityDrup
       $result = $query->entityCondition('entity_type', 'node')
         ->entityCondition('bundle', $bundles, 'IN')
         ->propertyCondition('status', 1)
-        ->fieldCondition($field_name, 'product_id', $wrapper->commerce_product->getIdentifier())
+        ->fieldCondition($field_name, 'product_id', $product_id)
         ->execute();
 
       if (isset($result['node'])) {
@@ -96,16 +104,12 @@ function commerce_discount_product_category_has_specified_terms_build(EntityDrup
               if ($node_display_wrapper->$node_field_name instanceof EntityListWrapper) {
                 foreach ($node_display_wrapper->$node_field_name as $wrapper_term) {
                   // We have a match, apply discount
-                  if (($key = array_search($wrapper_term->getIdentifier(), $terms_to_check)) !== FALSE) {
-                    return TRUE;
-                  }
+                  $cached_items[$cache_key][$wrapper_term->getIdentifier()] = $wrapper_term->getIdentifier();
                 }
               }
               elseif ($term = $node_display_wrapper->$node_field_name->value()) {
                 // The single value matches, return true.
-                if (($key = array_search($term->tid, $terms_to_check)) !== FALSE) {
-                  return TRUE;
-                }
+                $cached_items[$cache_key][$term->tid] = $term->tid;
               }
             }
           }
@@ -113,6 +117,11 @@ function commerce_discount_product_category_has_specified_terms_build(EntityDrup
       }
     }
   }
+
+  if (!empty(array_intersect($cached_items[$cache_key], $terms_to_check))) {
+    return TRUE;
+  }
+
   // Return false by default.
   return FALSE;
 }
