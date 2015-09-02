@@ -54,9 +54,11 @@ function commerce_discount_product_category_has_specified_terms_build(EntityDrup
   $terms_to_check = explode(', ', $terms);
 
   if (!isset($cached_items[$cache_key])) {
+    $cached_items[$cache_key] = array();
     // Collect product reference fields from the display nodes, to query them.
     static $product_reference_fields = FALSE;
     if ($product_reference_fields === FALSE) {
+      $product_reference_fields = array();
       foreach (field_info_field_map() as $field_name => $field_stub) {
         if ($field_stub['type'] == 'commerce_product_reference' && !empty($field_stub['bundles']['node'])) {
 
@@ -80,6 +82,7 @@ function commerce_discount_product_category_has_specified_terms_build(EntityDrup
       }
     }
 
+    $nodes = array();
     foreach ($product_reference_fields as $field_name => $bundles) {
       $query = new EntityFieldQuery();
       $result = $query->entityCondition('entity_type', 'node')
@@ -89,36 +92,21 @@ function commerce_discount_product_category_has_specified_terms_build(EntityDrup
         ->execute();
 
       if (isset($result['node'])) {
-        foreach (array_keys($result['node']) as $nid) {
-          $node = node_load($nid);
-          $node_display_wrapper = entity_metadata_wrapper('node', $node);
-
-          foreach ($node_display_wrapper->getPropertyInfo() as $node_field_name => $node_property) {
-
-            // Check if the property is of a taxonomy term type.
-            if (isset($node_property['type']) &&
-                ($node_property['type'] == 'taxonomy_term' || $node_property['type'] == 'list<taxonomy_term>')) {
-
-              // If the wrapped field is an instance of EntityListWrapper class, that
-              // means that field contains multiple values.
-              if ($node_display_wrapper->$node_field_name instanceof EntityListWrapper) {
-                foreach ($node_display_wrapper->$node_field_name as $wrapper_term) {
-                  // We have a match, apply discount
-                  $cached_items[$cache_key][$wrapper_term->getIdentifier()] = $wrapper_term->getIdentifier();
-                }
-              }
-              elseif ($term = $node_display_wrapper->$node_field_name->value()) {
-                // The single value matches, return true.
-                $cached_items[$cache_key][$term->tid] = $term->tid;
-              }
-            }
-          }
-        }
+        $nodes = array_merge($nodes, array_keys($result['node']));
       }
     }
+
+    $nodes = array_unique($nodes);
+    if ($nodes) {
+      $results = db_query('SELECT tid FROM {taxonomy_index} WHERE nid in (:nids)', array(':nids' => $nodes))->fetchCol();
+      foreach ($results as $tid) {
+        $cached_items[$cache_key][$tid] = $tid;
+      }
+    }
+
   }
 
-  if (!empty(array_intersect($cached_items[$cache_key], $terms_to_check))) {
+  if (is_array($cached_items[$cache_key]) && !empty(array_intersect($cached_items[$cache_key], $terms_to_check))) {
     return TRUE;
   }
 
